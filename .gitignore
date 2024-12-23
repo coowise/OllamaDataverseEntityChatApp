@@ -1,0 +1,15 @@
+# Ignorar carpetas de compilación autogeneradas
+bin/
+obj/
+
+# Ignorar configuraciones específicas del usuario en Visual Studio
+*.user
+*.suo
+
+# Ignorar archivos de depuración y temporales
+*.log
+*.vs/
+
+# Ignorar archivos generados por el sistema operativo
+.DS_Store
+Thumbs.db
