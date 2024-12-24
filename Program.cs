@@ -231,6 +231,30 @@ namespace OllamaDataverseEntityChatApp
                     {
                         // Optional: Show progress of system message
                     }
+
+                    // Then in the question loop, use embeddings to find relevant chunks
+                    while (true)
+                    {
+                        Console.Write("\nAsk a question (or 'exit' to quit): ");
+                        var message = Console.ReadLine();
+                        if (message?.ToLower() == "exit") break;
+
+                        // Get embedding for the question
+                        var questionEmbedding = await embedOllama.GenerateEmbeddingAsync(message);
+
+                        // Find most relevant chunks (using cosine similarity)
+                        var relevantChunks = OllamaManager.FindMostRelevantChunks(questionEmbedding.Vector.ToArray(), chunkEmbeddings, topK: 3);
+
+                        // Send question with relevant context
+                        var context = string.Join("\n", relevantChunks.SelectMany(c => c.text));
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        await foreach (var answerToken in chat.SendAsync(
+                            $"Context:\n{context}\n\nQuestion: {message}"))
+                        {
+                            Console.Write(answerToken);
+                        }
+                        Console.ResetColor();
+                    }
                 }
                 catch (Exception ex)
                 {
