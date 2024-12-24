@@ -1,2 +1,9 @@
-﻿// See https://aka.ms/new-console-template for more information
-Console.WriteLine("Hello, World!");
+﻿namespace OllamaDataverseEntityChatApp
+{
+    class Program
+    {
+        static async Task Main(string[] args)
+        {
+        }
+    }
+}
