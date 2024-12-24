@@ -1,18 +1,12 @@
 ﻿using Microsoft.PowerPlatform.Dataverse.Client;
 using OllamaDataverseEntityChatApp.Helpers;
+using OllamaSharp;
 using System.Configuration;
 
 namespace OllamaDataverseEntityChatApp
 {
     class Program
     {
-        private const string EMBEDDINGS_CACHE_PATH = "embeddings_cache.json";
-
-        // Ensure Ollama is available before executing this program.
-        // Specify the URL where Ollama is running in the App.config,
-        // regardless of whether it is local (requires 'ollama serve') or hosted on a server 
-        // (e.g., within a container). The URL is used by the OllamaSharp package to connect.
-
         static async Task Main(string[] args)
         {
             UXManager.ShowHeader(" CW Ollama Chat with Dataverse v0.1");
@@ -74,6 +68,44 @@ namespace OllamaDataverseEntityChatApp
                         Console.ResetColor();
                         return;
                     }
+
+                    //OllamaSharp
+                    Console.WriteLine("");
+                    var uri = OllamaManager.GetOllamaUri();
+                    var ollama = new OllamaApiClient(uri);
+
+                    var models = await ollama.ListLocalModelsAsync();
+                    string chatModel = null;
+                    string embedModel = null;
+
+                    foreach (var m in models)
+                    {
+                        Console.WriteLine($"Model available: {m.Name}");
+                        if (m.Name.Contains(aiModel.Trim()))
+                        {
+                            chatModel = m.Name;
+                            embedModel = m.Name;
+                        }
+                        else if (m.Name.Contains("nomic-embed-text"))
+                        {
+                            //Smaller embedding model
+                            //embedModel = m.Name;
+                        }
+                    }
+
+                    if (chatModel == null || embedModel == null)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("Missing required models! Please ensure both llama2 and nomic-embed-text are available.");
+                        Console.ResetColor();
+                        return;
+                    }
+
+                    Console.ForegroundColor = ConsoleColor.Cyan;
+                    Console.WriteLine($"Using chat model: {chatModel}");
+                    Console.WriteLine($"Using embedding model: {embedModel}");
+                    Console.ResetColor();
+                    Console.WriteLine("");
                 }
                 catch (Exception ex)
                 {
