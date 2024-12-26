@@ -132,6 +132,7 @@ namespace OllamaDataverseEntityChatApp
 
                     // Create a consolidated context of all records
                     var allRecordSummaries = results.Entities
+                        .Take(Convert.ToInt32(ConfigurationManager.AppSettings["MaxRecords"]))  // Limit to MaxRecords records
                         .Select((record, index) =>
                         {
                             if (entity == "flowrun")
@@ -148,12 +149,30 @@ namespace OllamaDataverseEntityChatApp
                                         .Where(attr => !attr.Key.StartsWith("wf."))
                                         .Select(attr => $"{attr.Key}: {attr.Value}"));
                             }
+                            else if (entity == "plugintracelog")
+                            {
+                                var messageBlock = record.Contains("messageblock") ? record["messageblock"].ToString() : "No message";
+                                var exceptionDetails = record.Contains("exceptiondetails") ? record["exceptiondetails"].ToString() : "No exception";
+
+                                return $"Plugin Trace Log:" +
+                                    $" Message: {messageBlock}, Exception: {exceptionDetails}, " +
+                                    string.Join(", ", record.Attributes
+                                        .Select(attr => $"{attr.Key}: {attr.Value}"));
+                            }
 
                             return $"Record {index + 1}:" +
                                 string.Join(", ", record.Attributes
                                     .Select(attr => $"{attr.Key}: {attr.Value}"));
                         })
                         .ToList();
+
+                    // Add warning if records were truncated
+                    if (results.Entities.Count > Convert.ToInt32(ConfigurationManager.AppSettings["MaxRecords"]))
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine($"\nWarning: Results truncated to last {Convert.ToInt32(ConfigurationManager.AppSettings["MaxRecords"])} records");
+                        Console.ResetColor();
+                    }
 
                     // Split records into manageable chunks
                     const int CHUNK_SIZE = 1;
@@ -164,9 +183,6 @@ namespace OllamaDataverseEntityChatApp
                     {
                         chunks.Add(allRecordSummaries.Skip(i).Take(CHUNK_SIZE).ToList());
                     }
-
-                    // Process chunks with progress bar
-                    Console.Write("Creating embeddings [");
                     var position = Console.CursorLeft;
                     var width = 50;
                     var processedChunks = 0;
@@ -180,7 +196,7 @@ namespace OllamaDataverseEntityChatApp
                         var cache = JsonSerializer.Deserialize<EmbeddingsCache>(File.ReadAllText(EMBEDDINGS_CACHE_PATH));
                         if (cache.EntityName == entity)
                         {
-                            Console.WriteLine("Loading embeddings from cache...");
+                            Console.WriteLine("\rLoading embeddings from cache...");
                             chunkEmbeddings = cache.Embeddings.ToDictionary(
                                 kvp => kvp.Key,
                                 kvp => (kvp.Value.Text, kvp.Value.Embedding)
@@ -191,6 +207,8 @@ namespace OllamaDataverseEntityChatApp
 
                     if (shouldCreateEmbeddings)
                     {
+                        Console.WriteLine("\nCreating embeddings...");
+                        Console.Write("[");
                         chunkEmbeddings = new Dictionary<int, (List<string> text, float[] embedding)>();
                         foreach (var chunk in chunks)
                         {
@@ -214,7 +232,7 @@ namespace OllamaDataverseEntityChatApp
                         {
                             EntityName = entity,
                             Embeddings = chunkEmbeddings.ToDictionary(
-                            kvp => kvp.Key,
+                                kvp => kvp.Key,
                                 kvp => new CacheEntry { Text = kvp.Value.text, Embedding = kvp.Value.embedding }
                             )
                         };
