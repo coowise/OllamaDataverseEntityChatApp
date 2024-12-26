@@ -24,16 +24,25 @@ namespace OllamaDataverseEntityChatApp.Helpers
             if (entity == "flowrun")
             {
                 var query = new QueryExpression(entity);
-                query.ColumnSet.AddColumns("flowrunid", "name", "createdon", "status", "starttime", "endtime", "duration");
+                query.ColumnSet.AddColumns("flowrunid", "name", "createdon", "status", "starttime", "endtime", "duration", "triggertype");
 
                 var workflowLink = query.AddLink("workflow", "workflow", "workflowid", JoinOperator.LeftOuter);
                 workflowLink.EntityAlias = "wf";
                 workflowLink.Columns.AddColumns("name", "primaryentity", "description");
 
+                query.AddOrder("createdon", OrderType.Descending);
+                return query;
+            }
+            else if (entity == "plugintracelog")
+            {
+                var query = new QueryExpression(entity);
+                query.ColumnSet.AddColumns("createdon", "messageblock", "exceptiondetails");
+                query.Criteria.AddCondition("exceptiondetails", ConditionOperator.NotNull);
+                query.AddOrder("createdon", OrderType.Descending);
                 return query;
             }
 
-            return new QueryExpression(entity)
+            var defaultQuery = new QueryExpression(entity)
             {
                 ColumnSet = new ColumnSet(metadata.Attributes
                     .Where(a => a.IsValidForRead.GetValueOrDefault()
@@ -42,6 +51,8 @@ namespace OllamaDataverseEntityChatApp.Helpers
                     .Select(a => a.LogicalName)
                     .ToArray())
             };
+            defaultQuery.AddOrder("createdon", OrderType.Descending);
+            return defaultQuery;
         }
     }
 }
