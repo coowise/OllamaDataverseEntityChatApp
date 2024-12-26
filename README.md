@@ -1,4 +1,4 @@
-﻿# CW.AI.Dataverse.Entity.Chat
+﻿# OllamaDataverseEntityChatApp
 
 A command-line tool that connects to Microsoft Dataverse, retrieves data, and uses AI (Embedding and ChatCompletion) to allow you to chat with your Dataverse data using semantic search capabilities.
 
@@ -27,8 +27,9 @@ xml
 <appSettings>
     <add key="DataverseConnectionString" value="AuthType=ClientSecret;url=;ClientId=;ClientSecret=" />
     <add key="AIModel" value="llama3" />
-    <add key="OllamaHost" value="192.168.0.144" />
-    <add key="OllamaPort" value="11434" />
+    <add key="OllamaHost" value="Enter Ollama host IP address here" />
+    <add key="OllamaPort" value="Enter Ollama port number here" />
+    <add key="MaxRecords" value="10" />
 </appSettings>
 </configuration>
 
