@@ -133,37 +133,7 @@ namespace OllamaDataverseEntityChatApp
                     // Create a consolidated context of all records
                     var allRecordSummaries = results.Entities
                         .Take(Convert.ToInt32(ConfigurationManager.AppSettings["MaxRecords"]))  // Limit to MaxRecords records
-                        .Select((record, index) =>
-                        {
-                            if (entity == "flowrun")
-                            {
-                                var flowName = record.Contains("wf.name")
-                                    ? record.GetAttributeValue<AliasedValue>("wf.name").Value.ToString()
-                                    : "Unnamed Flow";
-                                var status = record.Contains("status") ? record["status"].ToString() : "Unknown";
-                                var startTime = record.Contains("starttime") ? record["starttime"].ToString() : "Unknown";
-                                var duration = record.Contains("duration") ? record["duration"].ToString() : "Unknown";
-
-                                return $"Flow '{flowName}' execution:" +
-                                    string.Join(", ", record.Attributes
-                                        .Where(attr => !attr.Key.StartsWith("wf."))
-                                        .Select(attr => $"{attr.Key}: {attr.Value}"));
-                            }
-                            else if (entity == "plugintracelog")
-                            {
-                                var messageBlock = record.Contains("messageblock") ? record["messageblock"].ToString() : "No message";
-                                var exceptionDetails = record.Contains("exceptiondetails") ? record["exceptiondetails"].ToString() : "No exception";
-
-                                return $"Plugin Trace Log:" +
-                                    $" Message: {messageBlock}, Exception: {exceptionDetails}, " +
-                                    string.Join(", ", record.Attributes
-                                        .Select(attr => $"{attr.Key}: {attr.Value}"));
-                            }
-
-                            return $"Record {index + 1}:" +
-                                string.Join(", ", record.Attributes
-                                    .Select(attr => $"{attr.Key}: {attr.Value}"));
-                        })
+                        .Select((record, index) => DataverseManager.FormatRecordSummary(record, entity, index))
                         .ToList();
 
                     // Add warning if records were truncated
@@ -208,23 +178,60 @@ namespace OllamaDataverseEntityChatApp
                     if (shouldCreateEmbeddings)
                     {
                         Console.WriteLine("\nCreating embeddings...");
-                        Console.Write("[");
                         chunkEmbeddings = new Dictionary<int, (List<string> text, float[] embedding)>();
-                        foreach (var chunk in chunks)
+                        var isMultiThread = Convert.ToBoolean(ConfigurationManager.AppSettings["MultiThreadEmbedding"]);
+
+                        if (isMultiThread)
                         {
-                            // Combine chunk into single text
-                            var chunkText = string.Join("\n", chunk);
+                            var tasks = new List<Task<(int index, float[] embedding)>>();
+                            Console.WriteLine("Processing chunks in parallel...");
 
-                            // Get embedding
-                            var embeddingResult = await embedOllama.GenerateEmbeddingAsync(chunkText);
-                            var embedding = embeddingResult.Vector.ToArray();
+                            // Create tasks for parallel processing
+                            for (int i = 0; i < chunks.Count; i++)
+                            {
+                                var index = i;
+                                var chunk = chunks[i];
+                                var chunkText = string.Join("\n", chunk);
 
-                            chunkEmbeddings.Add(processedChunks, (chunk, embedding));
+                                tasks.Add(Task.Run(async () =>
+                                {
+                                    var embeddingResult = await embedOllama.GenerateEmbeddingAsync(chunkText);
+                                    return (index, embeddingResult.Vector.ToArray());
+                                }));
+                            }
 
-                            // Update progress bar
-                            UXManager.UpdateEmbeddingProgress(position, width, processedChunks, chunks.Count);
+                            // Show spinning cursor while processing
+                            var spinChars = new[] { '|', '/', '-', '\\' };
+                            var spinIndex = 0;
+                            while (tasks.Any(t => !t.IsCompleted))
+                            {
+                                Console.Write($"\rProcessing... {spinChars[spinIndex]} ({tasks.Count(t => t.IsCompleted)}/{tasks.Count} chunks complete)");
+                                spinIndex = (spinIndex + 1) % spinChars.Length;
+                                await Task.Delay(100);
+                            }
 
-                            processedChunks++;
+                            // Store results (renamed from 'results' to 'embeddingResults')
+                            var embeddingResults = await Task.WhenAll(tasks);
+                            foreach (var (index, embedding) in embeddingResults)
+                            {
+                                chunkEmbeddings.Add(index, (chunks[index], embedding));
+                            }
+                            Console.WriteLine("\rAll chunks processed successfully!            ");
+                        }
+                        else
+                        {
+                            Console.Write("[");
+                            for (int i = 0; i < chunks.Count; i++)
+                            {
+                                var chunkText = string.Join("\n", chunks[i]);
+                                var embeddingResult = await embedOllama.GenerateEmbeddingAsync(chunkText);
+                                var embedding = embeddingResult.Vector.ToArray();
+
+                                chunkEmbeddings.Add(i, (chunks[i], embedding));
+
+                                // Update progress bar
+                                UXManager.UpdateEmbeddingProgress(position, width, i, chunks.Count);
+                            }
                         }
 
                         // Save embeddings to cache
@@ -257,13 +264,37 @@ namespace OllamaDataverseEntityChatApp
                         var message = Console.ReadLine();
                         if (message?.ToLower() == "exit") break;
 
-                        // Get embedding for the question
-                        var questionEmbedding = await embedOllama.GenerateEmbeddingAsync(message);
+                        var similarityMethod = ConfigurationManager.AppSettings["SimilarityMethod"];
+                        List<(List<string> text, double score)> relevantChunks;
 
-                        // Find most relevant chunks (using cosine similarity)
-                        var relevantChunks = OllamaManager.FindMostRelevantChunks(questionEmbedding.Vector.ToArray(), chunkEmbeddings, topK: 3);
+                        if (similarityMethod?.ToLower() == "bm25")
+                        {
+                            // Convert chunks for BM25 format
+                            var textChunks = chunkEmbeddings.ToDictionary(
+                                kvp => kvp.Key,
+                                kvp => kvp.Value.text
+                            );
 
-                        // Send question with relevant context
+                            relevantChunks = OllamaManager.FindMostRelevantChunksBM25(
+                                message,
+                                textChunks,
+                                topK: 3
+                            );
+                        }
+                        else // Default to Cosine similarity
+                        {
+                            var questionEmbedding = await embedOllama.GenerateEmbeddingAsync(message);
+                            var cosineChunks = OllamaManager.FindMostRelevantChunks(
+                                questionEmbedding.Vector.ToArray(),
+                                chunkEmbeddings,
+                                topK: 3
+                            );
+
+                            // Convert to common format
+                            relevantChunks = cosineChunks.Select(c => (c.text, (double)OllamaManager.CosineSimilarity(questionEmbedding.Vector.ToArray(), c.embedding))).ToList();
+                        }
+
+                        // Use the relevant chunks (same as before)
                         var context = string.Join("\n", relevantChunks.SelectMany(c => c.text));
                         Console.ForegroundColor = ConsoleColor.Yellow;
                         await foreach (var answerToken in chat.SendAsync(

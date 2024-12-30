@@ -13,7 +13,7 @@ A command-line tool that connects to Microsoft Dataverse, retrieves data, and us
 
 ## Prerequisites
 
-- .NET 6.0 or higher
+- .NET 8.0
 - Ollama installed and running
 - Access to a Microsoft Dataverse environment
 - Sufficient GPU, disk and system memory for running AI models
@@ -30,6 +30,8 @@ xml
     <add key="OllamaHost" value="Enter Ollama host IP address here" />
     <add key="OllamaPort" value="Enter Ollama port number here" />
     <add key="MaxRecords" value="10" />
+    <add key="MultiThreadEmbedding" value="true" />
+    <add key="SimilarityMethod" value="BM25" />
 </appSettings>
 </configuration>
 
