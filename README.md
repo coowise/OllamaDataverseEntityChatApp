@@ -45,6 +45,16 @@ Add the following settings to your `App.config` file:
 
 ## Usage
 
+Before running the application, ensure Ollama is running:
+
+1. If you are using Ollama locally, start the Ollama server:
+
+ ```bash
+ollama serve
+```
+
+2. Run the application:
+
  ```bash
 dotnet run
 ```
