@@ -22,7 +22,7 @@ A command-line tool that connects to Microsoft Dataverse, retrieves data, and us
 
 Add the following settings to your `App.config` file:
 
-xml
+```xml
 <configuration>
 <appSettings>
     <add key="DataverseConnectionString" value="AuthType=ClientSecret;url=;ClientId=;ClientSecret=" />
@@ -34,7 +34,7 @@ xml
     <add key="SimilarityMethod" value="BM25" />
 </appSettings>
 </configuration>
-
+```
 
 ## Installation
 
@@ -45,9 +45,19 @@ xml
 
 ## Usage
 
-bash
-dotnet run
+Before running the application, ensure Ollama is running:
 
+1. If you are using Ollama locally, start the Ollama server:
+
+ ```bash
+ollama serve
+```
+
+2. Run the application:
+
+ ```bash
+dotnet run
+```
 
 The application will:
 1. Connect to your Dataverse environment
