@@ -81,3 +81,7 @@ The application includes robust error handling for:
 - System.Configuration.ConfigurationManager
 - Ollama (external dependency)
 - OllamaSharp
+
+## Contributing
+
+Contributions are welcome! Feel free to fork the repository and submit a pull request.
