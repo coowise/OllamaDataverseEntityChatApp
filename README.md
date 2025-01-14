@@ -26,7 +26,8 @@ Add the following settings to your `App.config` file:
 <configuration>
 <appSettings>
     <add key="DataverseConnectionString" value="AuthType=ClientSecret;url=;ClientId=;ClientSecret=" />
-    <add key="AIModel" value="llama3" />
+    <add key="AIGenerationModel" value="llama3" />
+    <add key="AIEmbeddingModel" value="nomic-embed-text" />
     <add key="OllamaHost" value="Enter Ollama host IP address here" />
     <add key="OllamaPort" value="Enter Ollama port number here" />
     <add key="MaxRecords" value="10" />

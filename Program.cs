@@ -24,7 +24,8 @@ namespace OllamaDataverseEntityChatApp
 
             // Read configuration
             var connectionString = ConfigurationManager.AppSettings["DataverseConnectionString"];
-            var aiModel = ConfigurationManager.AppSettings["AIModel"];
+            var aiGenerationModel = ConfigurationManager.AppSettings["AIGenerationModel"];
+            var aiEmbeddingModel = ConfigurationManager.AppSettings["AIEmbeddingModel"];
             var systemPrompt = File.ReadAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Prompts", "SystemPrompt.txt"));
 
             // Get entity selection from user
@@ -92,15 +93,14 @@ namespace OllamaDataverseEntityChatApp
                     foreach (var m in models)
                     {
                         Console.WriteLine($"Model available: {m.Name}");
-                        if (m.Name.Contains(aiModel.Trim()))
+                        if (m.Name.Contains(aiGenerationModel.Trim()))
                         {
                             chatModel = m.Name;
-                            embedModel = m.Name;
+                            
                         }
-                        else if (m.Name.Contains("nomic-embed-text"))
+                        if (m.Name.Contains(aiEmbeddingModel.Trim()))
                         {
-                            //Smaller embedding model
-                            //embedModel = m.Name;
+                            embedModel = m.Name;
                         }
                     }
 
