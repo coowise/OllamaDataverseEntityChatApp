@@ -3,6 +3,7 @@ using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Query;
+using System.Text;
 
 namespace OllamaDataverseEntityChatApp.Helpers
 {
@@ -36,12 +37,25 @@ namespace OllamaDataverseEntityChatApp.Helpers
         private static QueryExpression BuildFlowRunQuery()
         {
             var query = new QueryExpression("flowrun");
-            query.ColumnSet.AddColumns("flowrunid", "name", "createdon", "status",
-                "starttime", "endtime", "duration", "triggertype");
+            query.ColumnSet.AddColumns("flowrunid",
+                "name",
+                "createdon",
+                "status",
+                "starttime",
+                "endtime",
+                "duration",
+                "triggertype",
+                "error",
+                "inputs",
+                "outputs",
+                "correlationid",
+                "organization",
+                "solution"
+            );
 
             var workflowLink = query.AddLink("workflow", "workflow", "workflowid", JoinOperator.LeftOuter);
             workflowLink.EntityAlias = "wf";
-            workflowLink.Columns.AddColumns("name", "primaryentity", "description", "statecode");
+            workflowLink.Columns.AddColumns("name", "primaryentity", "description", "statecode", "category", "clientdata");
 
             query.AddOrder("createdon", OrderType.Descending);
             return query;
@@ -49,18 +63,61 @@ namespace OllamaDataverseEntityChatApp.Helpers
 
         public static string FormatFlowRunRecord(Entity record)
         {
+            var sb = new StringBuilder();
+
             var flowName = record.Contains("wf.name")
                 ? record.GetAttributeValue<AliasedValue>("wf.name").Value.ToString()
                 : "Unnamed Flow";
+            var flowId = record.Id.ToString();
             var status = record.Contains("status") ? record["status"].ToString() : "Unknown";
-            var startTime = record.Contains("starttime") ? record["starttime"].ToString() : "Unknown";
-            var endTime = record.Contains("endtime") ? record["endtime"].ToString() : "Unknown";
+            var startTime = record.Contains("starttime")
+                ? DateTime.Parse(record["starttime"].ToString()).ToString("yyyy-MM-dd HH:mm:ss")
+                : "Unknown";
+            var endTime = record.Contains("endtime")
+                ? DateTime.Parse(record["endtime"].ToString()).ToString("yyyy-MM-dd HH:mm:ss")
+                : "Unknown";
             var duration = record.Contains("duration") ? record["duration"].ToString() : "Unknown";
             var triggerType = record.Contains("triggertype") ? record["triggertype"].ToString() : "Unknown";
+            var error = record.Contains("error") ? record["error"].ToString() : "";
 
-            return $"Flow '{flowName}' execution:" +
-                $" Status: {status}, Start: {startTime}, End: {endTime}" +
-                $" Duration: {duration}, Trigger Type: {triggerType}";
+            // Additional Context
+            var primaryEntity = record.Contains("wf.primaryentity")
+                ? record.GetAttributeValue<AliasedValue>("wf.primaryentity").Value.ToString()
+                : "Unknown";
+            var flowDescription = record.Contains("wf.description")
+                ? record.GetAttributeValue<AliasedValue>("wf.description").Value.ToString()
+                : "";
+            var flowState = record.Contains("wf.statecode")
+                ? record.GetAttributeValue<AliasedValue>("wf.statecode").Value.ToString()
+                : "Unknown";
+            var clientData = record.Contains("wf.clientdata")
+                ? record.GetAttributeValue<AliasedValue>("wf.clientdata").Value.ToString()
+                : "";
+
+            // ... existing error information ...
+
+            // Build the formatted summary
+            sb.AppendLine($"Flow: {flowName} (ID: {flowId})");
+            sb.AppendLine($"Status: {status} | Flow State: {flowState}");
+            sb.AppendLine($"Execution: {startTime} to {endTime} (Duration: {duration})");
+            sb.AppendLine($"Trigger Type: {triggerType} | Primary Entity: {primaryEntity}");
+
+            if (!string.IsNullOrEmpty(flowDescription))
+            {
+                sb.AppendLine($"Description: {flowDescription}");
+            }
+
+            if (!string.IsNullOrEmpty(clientData))
+            {
+                sb.AppendLine($"Client Data: {clientData}");
+            }
+
+            if (!string.IsNullOrEmpty(error))
+            {
+                sb.AppendLine($"Error: {error}");
+            }
+
+            return sb.ToString().TrimEnd();
         }
 
         private static QueryExpression BuildPluginTraceLogQuery()
