@@ -1,12 +1,64 @@
-﻿using System.Configuration;
+﻿using OllamaSharp;
+using System.Configuration;
 
 namespace OllamaDataverseEntityChatApp.Helpers
 {
     public static class OllamaManager
     {
-        private static string BaseUrl => $"https://{ConfigurationManager.AppSettings["OllamaHost"]}";
+        private static string BaseUrl => $"https://{ConfigurationManager.AppSettings["OllamaHost"]}:{ConfigurationManager.AppSettings["OllamaPort"]}";
 
         public static Uri GetOllamaUri() => new Uri(BaseUrl);
+
+        public static async Task<(OllamaApiClient chatClient, OllamaApiClient embedClient)> InitializeClientsAsync(string aiGenerationModel, string aiEmbeddingModel)
+        {
+            Console.WriteLine("");
+            var uri = GetOllamaUri();
+            var ollama = new OllamaApiClient(uri);
+
+            var models = await ollama.ListLocalModelsAsync();
+            string chatModel = null;
+            string embedModel = null;
+
+            foreach (var m in models)
+            {
+                Console.WriteLine($"Model available: {m.Name}");
+                if (m.Name.Contains(aiGenerationModel.Trim()))
+                {
+                    chatModel = m.Name;
+                }
+                if (m.Name.Contains(aiEmbeddingModel.Trim()))
+                {
+                    embedModel = m.Name;
+                }
+            }
+
+            if (chatModel == null || embedModel == null)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("Missing required models! Please ensure both llama2 and nomic-embed-text are available.");
+                Console.ResetColor();
+                throw new InvalidOperationException("Required models are missing.");
+            }
+
+            Console.WriteLine("");
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine($"Using chat model: {chatModel}");
+            Console.WriteLine($"Using embedding model: {embedModel}");
+            Console.ResetColor();
+            Console.WriteLine("");
+
+            var httpClient = new HttpClient()
+            {
+                Timeout = TimeSpan.FromMinutes(20),
+                BaseAddress = uri
+            };
+
+            // Create two separate clients for different purposes
+            var chatClient = new OllamaApiClient(httpClient) { SelectedModel = chatModel };
+            var embedClient = new OllamaApiClient(httpClient) { SelectedModel = embedModel };
+
+            return (chatClient, embedClient);
+        }
 
         public static List<(List<string> text, float[] embedding)> FindMostRelevantChunks(
             float[] queryEmbedding,

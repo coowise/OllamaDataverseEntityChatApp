@@ -1,6 +1,5 @@
 ﻿using Microsoft.Extensions.AI;
 using Microsoft.PowerPlatform.Dataverse.Client;
-using Microsoft.Xrm.Sdk;
 using OllamaDataverseEntityChatApp.Caching;
 using OllamaDataverseEntityChatApp.Helpers;
 using OllamaSharp;
@@ -82,54 +81,20 @@ namespace OllamaDataverseEntityChatApp
                         return;
                     }
 
-                    //OllamaSharp
-                    Console.WriteLine("");
-                    var uri = OllamaManager.GetOllamaUri();
-                    var ollama = new OllamaApiClient(uri);
+                    OllamaApiClient chatOllama = null;
+                    OllamaApiClient embedOllama = null;
 
-                    var models = await ollama.ListLocalModelsAsync();
-                    string chatModel = null;
-                    string embedModel = null;
-
-                    foreach (var m in models)
+                    try
                     {
-                        Console.WriteLine($"Model available: {m.Name}");
-                        if (m.Name.Contains(aiGenerationModel.Trim()))
-                        {
-                            chatModel = m.Name;
-                            
-                        }
-                        if (m.Name.Contains(aiEmbeddingModel.Trim()))
-                        {
-                            embedModel = m.Name;
-                        }
+                        (chatOllama, embedOllama) = await OllamaManager.InitializeClientsAsync(aiGenerationModel, aiEmbeddingModel);
                     }
-
-                    if (chatModel == null || embedModel == null)
+                    catch (InvalidOperationException ex)
                     {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("Missing required models! Please ensure both llama2 and nomic-embed-text are available.");
-                        Console.ResetColor();
+                        Console.WriteLine(ex.Message);
                         return;
                     }
 
-                    Console.ForegroundColor = ConsoleColor.Cyan;
-                    Console.WriteLine($"Using chat model: {chatModel}");
-                    Console.WriteLine($"Using embedding model: {embedModel}");
-                    Console.ResetColor();
-                    Console.WriteLine("");
-
-                    var httpClient = new HttpClient()
-                    {
-                        Timeout = TimeSpan.FromMinutes(5),
-                        BaseAddress = uri
-                    };
-
-                    // Create two separate clients for different purposes
-                    var chatOllama = new OllamaApiClient(httpClient) { SelectedModel = chatModel };
-                    var embedOllama = new OllamaApiClient(httpClient) { SelectedModel = embedModel };
-
-                    var chat = new OllamaSharp.Chat(chatOllama);
+                    var chat = new Chat(chatOllama);
 
                     // Create a consolidated context of all records
                     var allRecordSummaries = results.Entities
