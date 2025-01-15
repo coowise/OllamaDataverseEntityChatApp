@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.PowerPlatform.Dataverse.Client" Version="1.2.2" />
+    <PackageReference Include="Milvus.Client" Version="2.2.2-preview.6" />
     <PackageReference Include="OllamaSharp" Version="4.0.11" />
   </ItemGroup>
 
