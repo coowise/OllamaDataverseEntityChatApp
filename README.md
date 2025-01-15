@@ -15,6 +15,7 @@ A command-line tool that connects to Microsoft Dataverse, retrieves data, and us
 
 - .NET 8.0
 - Ollama installed and running
+- Milvus installed and running
 - Access to a Microsoft Dataverse environment
 - Sufficient GPU, disk and system memory for running AI models
 
@@ -32,7 +33,11 @@ Add the following settings to your `App.config` file:
     <add key="OllamaPort" value="Enter Ollama port number here" />
     <add key="MaxRecords" value="10" />
     <add key="MultiThreadEmbedding" value="true" />
-    <add key="SimilarityMethod" value="BM25" />
+    <add key="SimilarityMethod" value="L2" />
+    <add key="VectorDB" value="Milvus" />
+    <add key="VectorDimensions" value="768" />
+    <add key="MilvusHost" value="Enter Milvus host IP address here" />
+    <add key="MilvusPort" value="Enter Milvus port number here" />
 </appSettings>
 </configuration>
 ```
@@ -82,6 +87,7 @@ The application includes robust error handling for:
 - System.Configuration.ConfigurationManager
 - Ollama (external dependency)
 - OllamaSharp
+- Milvus.Client
 
 ## Contributing
 

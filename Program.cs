@@ -1,16 +1,19 @@
 ﻿using Microsoft.Extensions.AI;
 using Microsoft.PowerPlatform.Dataverse.Client;
-using OllamaDataverseEntityChatApp.Caching;
+using Milvus.Client;
 using OllamaDataverseEntityChatApp.Helpers;
 using OllamaSharp;
 using System.Configuration;
-using System.Text.Json;
 
 namespace OllamaDataverseEntityChatApp
 {
     class Program
     {
-        private const string EMBEDDINGS_CACHE_PATH = "embeddings_cache.json";
+        private static readonly string MILVUS_HOST = ConfigurationManager.AppSettings["MilvusHost"];
+        private static readonly int MILVUS_PORT = Convert.ToInt32(ConfigurationManager.AppSettings["MilvusPort"]);
+        private static readonly string MILVUS_COLLECTION = ConfigurationManager.AppSettings["MilvusCollection"];
+        private const int MAX_RETRIES = 5;
+        private const int RETRY_DELAY_MS = 10000; // Increased to 10 seconds
 
         // Ensure Ollama is available before executing this program.
         // Specify the URL where Ollama is running in the App.config,
@@ -96,11 +99,18 @@ namespace OllamaDataverseEntityChatApp
 
                     var chat = new Chat(chatOllama);
 
-                    // Create a consolidated context of all records
                     var allRecordSummaries = results.Entities
-                        .Take(Convert.ToInt32(ConfigurationManager.AppSettings["MaxRecords"]))  // Limit to MaxRecords records
-                        .Select((record, index) => DataverseManager.FormatRecordSummary(record, entity, index))
+                        .Take(Convert.ToInt32(ConfigurationManager.AppSettings["MaxRecords"]))
+                        .AsParallel()
+                        .Select((record, index) =>
+                        {
+                            var summary = DataverseManager.FormatRecordSummary(record, entity, index);
+                            Console.WriteLine($"Formatting record {index + 1}: {summary.Length} characters");
+                            return summary;
+                        })
                         .ToList();
+
+                    Console.WriteLine($"Total summaries generated: {allRecordSummaries.Count}");
 
                     // Add warning if records were truncated
                     if (results.Entities.Count > Convert.ToInt32(ConfigurationManager.AppSettings["MaxRecords"]))
@@ -124,39 +134,67 @@ namespace OllamaDataverseEntityChatApp
                     var processedChunks = 0;
 
                     // Store embeddings for each chunk
-                    var shouldCreateEmbeddings = true;
+                    var vectorDbMode = ConfigurationManager.AppSettings["VectorDB"] ?? "Milvus";
                     Dictionary<int, (List<string> text, float[] embedding)> chunkEmbeddings = new();
 
-                    if (File.Exists(EMBEDDINGS_CACHE_PATH))
+                    MilvusClient milvusClient = null;
+                    MilvusCollection milvusCollection = null;
+
+                    if (vectorDbMode == "Milvus")
                     {
-                        var cache = JsonSerializer.Deserialize<EmbeddingsCache>(File.ReadAllText(EMBEDDINGS_CACHE_PATH));
-                        if (cache.EntityName == entity)
+                        Console.Write("Connecting to Milvus... ");
+                        try
                         {
-                            Console.WriteLine("\rLoading embeddings from cache...");
-                            chunkEmbeddings = cache.Embeddings.ToDictionary(
-                                kvp => kvp.Key,
-                                kvp => (kvp.Value.Text, kvp.Value.Embedding)
-                            );
-                            shouldCreateEmbeddings = false;
+                            (milvusClient, milvusCollection) = await MilvusManager.ConnectAsync(MILVUS_HOST, MILVUS_PORT, entity);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine("❌");
+                            Console.WriteLine($"Failed to connect to Milvus: {ex.Message}");
+                            Console.WriteLine("Please ensure Milvus is running using docker-compose up -d");
+                            Console.ResetColor();
+                            return;
                         }
                     }
 
-                    if (shouldCreateEmbeddings)
+                    var isMultiThread = Convert.ToBoolean(ConfigurationManager.AppSettings["MultiThreadEmbedding"]);
+
+                    if (isMultiThread)
                     {
-                        Console.WriteLine("\nCreating embeddings...");
-                        chunkEmbeddings = new Dictionary<int, (List<string> text, float[] embedding)>();
-                        var isMultiThread = Convert.ToBoolean(ConfigurationManager.AppSettings["MultiThreadEmbedding"]);
+                        var tasks = new List<Task<(int index, float[] embedding)>>();
+                        var recordsToProcess = new List<(int index, Microsoft.Xrm.Sdk.Entity record)>();
 
-                        if (isMultiThread)
+                        // First, check which records need processing
+                        Console.WriteLine("\nChecking existing embeddings in Milvus...");
+                        for (int i = 0; i < chunks.Count; i++)
                         {
-                            var tasks = new List<Task<(int index, float[] embedding)>>();
-                            Console.WriteLine("Processing chunks in parallel...");
+                            var record = results.Entities[i];
+                            var recordId = record.Id.ToString();
 
-                            // Create tasks for parallel processing
-                            for (int i = 0; i < chunks.Count; i++)
+                            var exists = await MilvusManager.DoesEntityExist(milvusCollection, entity, recordId);
+                            Console.WriteLine($"Record {recordId} exists: {exists}");
+
+                            if (!exists)
                             {
-                                var index = i;
-                                var chunk = chunks[i];
+                                recordsToProcess.Add((i, record));
+                            }
+                        }
+
+                        if (recordsToProcess.Count == 0)
+                        {
+                            Console.WriteLine("All records already have embeddings in Milvus. Skipping embedding generation.");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Generating embeddings for {recordsToProcess.Count} new records...");
+
+                            // Create tasks only for records that need processing
+                            foreach (var (index, record) in recordsToProcess)
+                            {
+                                if (index >= chunks.Count) continue;
+
+                                var chunk = chunks[index];
                                 var chunkText = string.Join("\n", chunk);
 
                                 tasks.Add(Task.Run(async () =>
@@ -176,46 +214,61 @@ namespace OllamaDataverseEntityChatApp
                                 await Task.Delay(100);
                             }
 
-                            // Store results (renamed from 'results' to 'embeddingResults')
                             var embeddingResults = await Task.WhenAll(tasks);
                             foreach (var (index, embedding) in embeddingResults)
                             {
                                 chunkEmbeddings.Add(index, (chunks[index], embedding));
                             }
-                            Console.WriteLine("\rAll chunks processed successfully!            ");
+                            Console.WriteLine("\rAll embeddings generated successfully!");
                         }
-                        else
+
+                        Console.WriteLine("\rInserting new embeddings into Milvus... ");
+                        for (int retry = 0; retry < MAX_RETRIES; retry++)
                         {
-                            Console.Write("[");
-                            for (int i = 0; i < chunks.Count; i++)
+                            try
                             {
-                                var chunkText = string.Join("\n", chunks[i]);
-                                var embeddingResult = await embedOllama.GenerateEmbeddingAsync(chunkText);
-                                var embedding = embeddingResult.Vector.ToArray();
+                                if (milvusCollection == null)
+                                    milvusCollection = milvusClient.GetCollection(MILVUS_COLLECTION);
 
-                                chunkEmbeddings.Add(i, (chunks[i], embedding));
+                                // Process each record in chunkEmbeddings
+                                foreach (var kvp in chunkEmbeddings)
+                                {
+                                    var index = kvp.Key;
+                                    var record = results.Entities[index];
+                                    var recordId = record.Id.ToString();
 
-                                // Update progress bar
-                                UXManager.UpdateEmbeddingProgress(position, width, i, chunks.Count);
+                                    await MilvusManager.InsertEmbeddingsIfNotExistsAsync(
+                                        milvusCollection,
+                                        entity, // schema name
+                                        recordId,
+                                        new Dictionary<int, (List<string>, float[])>
+                                        {
+                                            { index, kvp.Value }
+                                        }
+                                    );
+                                }
+
+                                Console.ForegroundColor = ConsoleColor.Green;
+                                Console.WriteLine("\rCompleted inserting all records ✓");
+                                Console.ResetColor();
+                                break;
+                            }
+                            catch (Exception ex)
+                            {
+                                if (retry == MAX_RETRIES - 1)
+                                {
+                                    Console.ForegroundColor = ConsoleColor.Red;
+                                    Console.WriteLine($"\nFailed to insert embeddings after {MAX_RETRIES} attempts: {ex.Message}");
+                                    Console.ResetColor();
+                                    throw;
+                                }
+
+                                var delay = RETRY_DELAY_MS * (retry + 1); // Exponential backoff
+                                Console.Write($"\rRate limit hit. Retrying in {delay / 1000.0:F1}s... ");
+                                await Task.Delay(delay);
                             }
                         }
-
-                        // Save embeddings to cache
-                        var cache = new EmbeddingsCache
-                        {
-                            EntityName = entity,
-                            Embeddings = chunkEmbeddings.ToDictionary(
-                                kvp => kvp.Key,
-                                kvp => new CacheEntry { Text = kvp.Value.text, Embedding = kvp.Value.embedding }
-                            )
-                        };
-                        File.WriteAllText(EMBEDDINGS_CACHE_PATH, JsonSerializer.Serialize(cache));
                     }
-
-                    Console.WriteLine();
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine("Embeddings created! ✓");
-                    Console.ResetColor();
 
                     // Instead of loading all chunks into context, we'll use embeddings for retrieval
                     await foreach (var token in chat.SendAsAsync(OllamaSharp.Models.Chat.ChatRole.System, systemPrompt))
@@ -231,44 +284,35 @@ namespace OllamaDataverseEntityChatApp
                         if (message?.ToLower() == "exit") break;
 
                         var similarityMethod = ConfigurationManager.AppSettings["SimilarityMethod"];
-                        List<(List<string> text, double score)> relevantChunks;
+                        List<(List<string> text, double score)> similarChunks;
 
-                        if (similarityMethod?.ToLower() == "bm25")
+                        var questionEmbedding = await embedOllama.GenerateEmbeddingAsync(message);
+
+                        similarChunks = await MilvusManager.SearchSimilarAsync(
+                            milvusCollection,
+                            questionEmbedding.Vector.ToArray(),
+                            similarityMethod,
+                            limit: 3
+                        );
+
+                        if (!similarChunks.Any())
                         {
-                            // Convert chunks for BM25 format
-                            var textChunks = chunkEmbeddings.ToDictionary(
-                                kvp => kvp.Key,
-                                kvp => kvp.Value.text
-                            );
-
-                            relevantChunks = OllamaManager.FindMostRelevantChunksBM25(
-                                message,
-                                textChunks,
-                                topK: 3
-                            );
-                        }
-                        else // Default to Cosine similarity
-                        {
-                            var questionEmbedding = await embedOllama.GenerateEmbeddingAsync(message);
-                            var cosineChunks = OllamaManager.FindMostRelevantChunks(
-                                questionEmbedding.Vector.ToArray(),
-                                chunkEmbeddings,
-                                topK: 3
-                            );
-
-                            // Convert to common format
-                            relevantChunks = cosineChunks.Select(c => (c.text, (double)OllamaManager.CosineSimilarity(questionEmbedding.Vector.ToArray(), c.embedding))).ToList();
+                            Console.WriteLine("No relevant chunks found to answer the question.");
+                            continue;
                         }
 
-                        // Use the relevant chunks (same as before)
-                        var context = string.Join("\n", relevantChunks.SelectMany(c => c.text));
-                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        // Format context more clearly
+                        var context = "Here are the most relevant records:\n\n" +
+                            string.Join("\n---\n", similarChunks.Select(c => string.Join("\n", c.text)));
+
+                        // Add more structure to the prompt
                         await foreach (var answerToken in chat.SendAsync(
-                            $"Context:\n{context}\n\nQuestion: {message}"))
+                            $"Based on the following Dataverse records:\n\n{context}\n\n" +
+                            $"Please answer this question: {message}\n\n" +
+                            "Use only the information provided in the context above to answer the question."))
                         {
                             Console.Write(answerToken);
                         }
-                        Console.ResetColor();
                     }
                 }
                 catch (Exception ex)
