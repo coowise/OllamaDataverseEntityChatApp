@@ -22,4 +22,7 @@
 - If Exception details is empty, it's an information record = NO Error or Exception
 - Take into account the most recent records that match the user criteria to analyse Message Block and Exception details if any.
 
+5. When working with Flow Runs:
+- Client Data contains useful information about contextual parameters passed into the flow at runtime and session- or user-specific metadata (IDs, request headers, etc.)
+
 Remember: You'll receive relevant context through semantic search. Focus on the most pertinent information in the provided records to answer questions effectively.
