@@ -60,7 +60,8 @@ namespace OllamaDataverseEntityChatApp
                     Console.ResetColor();
 
                     Console.Write("Building query... ");
-                    var query = DataverseManager.BuildQueryFromMetadata(metadata, entity);
+                    var maxRecords = Convert.ToInt32(ConfigurationManager.AppSettings["MaxRecords"]);
+                    var query = DataverseManager.BuildQueryFromMetadata(metadata, entity, maxRecords);
 
                     Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine("✓");

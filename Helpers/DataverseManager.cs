@@ -21,23 +21,24 @@ namespace OllamaDataverseEntityChatApp.Helpers
             return response.EntityMetadata;
         }
 
-        public static QueryExpression BuildQueryFromMetadata(EntityMetadata metadata, string entity)
+        public static QueryExpression BuildQueryFromMetadata(EntityMetadata metadata, string entity, int maxRecords)
         {
             switch (entity)
             {
                 case "flowrun":
-                    return BuildFlowRunQuery();
+                    return BuildFlowRunQuery(maxRecords);
                 case "plugintracelog":
-                    return BuildPluginTraceLogQuery();
+                    return BuildPluginTraceLogQuery(maxRecords);
                 default:
-                    return BuildDefaultQuery(metadata, entity);
+                    return BuildDefaultQuery(metadata, entity, maxRecords);
             }
         }
 
-        private static QueryExpression BuildFlowRunQuery()
+        private static QueryExpression BuildFlowRunQuery(int maxRecords)
         {
             var query = new QueryExpression("flowrun");
-            query.ColumnSet.AddColumns("flowrunid",
+            query.ColumnSet.AddColumns(
+                "flowrunid",
                 "name",
                 "createdon",
                 "status",
@@ -55,9 +56,19 @@ namespace OllamaDataverseEntityChatApp.Helpers
 
             var workflowLink = query.AddLink("workflow", "workflow", "workflowid", JoinOperator.LeftOuter);
             workflowLink.EntityAlias = "wf";
-            workflowLink.Columns.AddColumns("name", "primaryentity", "description", "statecode", "category", "clientdata");
+            workflowLink.Columns.AddColumns(
+                "name",
+                "primaryentity",
+                "description",
+                "statecode",
+                "category",
+                "clientdata"
+            );
 
             query.AddOrder("createdon", OrderType.Descending);
+            query.TopCount = maxRecords;
+            query.NoLock = true;
+
             return query;
         }
 
@@ -120,13 +131,14 @@ namespace OllamaDataverseEntityChatApp.Helpers
             return sb.ToString().TrimEnd();
         }
 
-        private static QueryExpression BuildPluginTraceLogQuery()
+        private static QueryExpression BuildPluginTraceLogQuery(int maxRecords)
         {
             var query = new QueryExpression("plugintracelog");
             query.ColumnSet.AddColumns("createdon", "messagename", "operationtype",
                 "messageblock", "exceptiondetails", "performanceexecutionduration");
             query.Criteria.AddCondition("exceptiondetails", ConditionOperator.NotNull);
             query.AddOrder("createdon", OrderType.Descending);
+            query.TopCount = maxRecords;
             return query;
         }
 
@@ -163,7 +175,7 @@ namespace OllamaDataverseEntityChatApp.Helpers
             };
         }
 
-        private static QueryExpression BuildDefaultQuery(EntityMetadata metadata, string entity)
+        private static QueryExpression BuildDefaultQuery(EntityMetadata metadata, string entity, int maxRecords)
         {
             var query = new QueryExpression(entity)
             {
@@ -175,6 +187,7 @@ namespace OllamaDataverseEntityChatApp.Helpers
                     .ToArray())
             };
             query.AddOrder("createdon", OrderType.Descending);
+            query.TopCount = maxRecords;
             return query;
         }
     }
