@@ -51,7 +51,7 @@ Add the following settings to your `App.config` file:
 
 ## Usage
 
-Before running the application, ensure Ollama is running:
+Before running the application, ensure Ollama and Milvus are running:
 
 1. If you are using Ollama locally, start the Ollama server:
 
@@ -59,7 +59,15 @@ Before running the application, ensure Ollama is running:
 ollama serve
 ```
 
-2. Run the application:
+2. Start the Milvus server for a standalone instance:
+
+```bash
+docker run -d --name milvus-standalone -p 19530:19530 -p 9091:9091 milvusdb/milvus-standalone:latest
+```
+
+For a cluster setup, refer to the [Milvus documentation](https://milvus.io/docs).
+
+3. Run the application:
 
  ```bash
 dotnet run

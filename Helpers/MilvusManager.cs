@@ -6,7 +6,7 @@ namespace OllamaDataverseEntityChatApp.Helpers
     public static class MilvusManager
     {
         private const string MILVUS_DATABASE = "cw_ollama_dataverse";
-        private const string MILVUS_COLLECTION_PREFIX = "cw_dataverse_new";
+        private const string MILVUS_COLLECTION_PREFIX = "cw_dataverse_";
         private const int MAX_RETRIES = 5;
         private const int RETRY_DELAY_MS = 10000;
         private const int BATCH_SIZE = 5;
@@ -85,11 +85,10 @@ namespace OllamaDataverseEntityChatApp.Helpers
 
         public static async Task InsertEmbeddingsAsync(
             MilvusCollection collection,
-            string schemaName,
             string recordId,
             Dictionary<int, (List<string> text, float[] embedding)> embeddings)
         {
-            string entityId = $"{schemaName}_{recordId}";
+            string entityId = $"{recordId}";
             await collection.LoadAsync();
             await Task.Delay(2000); // Ensure collection is loaded
 
@@ -178,11 +177,11 @@ namespace OllamaDataverseEntityChatApp.Helpers
             return results;
         }
 
-        public static async Task<bool> DoesEntityExist(MilvusCollection collection, string entitySchema, string recordId)
+        public static async Task<bool> DoesEntityExist(MilvusCollection collection, string recordId)
         {
             try
             {
-                string entityId = $"{entitySchema}_{recordId}";
+                string entityId = $"{recordId}";
                 await collection.LoadAsync();
 
                 var expr = $"entity_id == '{entityId}'";
@@ -201,17 +200,16 @@ namespace OllamaDataverseEntityChatApp.Helpers
 
         public static async Task InsertEmbeddingsIfNotExistsAsync(
             MilvusCollection collection,
-            string schemaName,
             string recordId,
             Dictionary<int, (List<string> text, float[] embedding)> embeddings)
         {
-            if (await DoesEntityExist(collection, schemaName, recordId))
+            if (await DoesEntityExist(collection, recordId))
             {
-                //Console.WriteLine($"Embeddings for entity {schemaName}_{recordId} already exist. Skipping insertion.");
+                //Console.WriteLine($"Embeddings for entity {recordId} already exist. Skipping insertion.");
                 return;
             }
 
-            await InsertEmbeddingsAsync(collection, schemaName, recordId, embeddings);
+            await InsertEmbeddingsAsync(collection, recordId, embeddings);
         }
     }
 }

@@ -11,7 +11,6 @@ namespace OllamaDataverseEntityChatApp
     {
         private static readonly string MILVUS_HOST = ConfigurationManager.AppSettings["MilvusHost"];
         private static readonly int MILVUS_PORT = Convert.ToInt32(ConfigurationManager.AppSettings["MilvusPort"]);
-        private static readonly string MILVUS_COLLECTION = ConfigurationManager.AppSettings["MilvusCollection"];
         private const int MAX_RETRIES = 5;
         private const int RETRY_DELAY_MS = 10000; // Increased to 10 seconds
 
@@ -172,7 +171,7 @@ namespace OllamaDataverseEntityChatApp
                             var record = results.Entities[i];
                             var recordId = record.Id.ToString();
 
-                            var exists = await MilvusManager.DoesEntityExist(milvusCollection, entity, recordId);
+                            var exists = await MilvusManager.DoesEntityExist(milvusCollection, recordId);
                             Console.WriteLine($"Record {recordId} exists: {exists}");
 
                             if (!exists)
@@ -227,9 +226,6 @@ namespace OllamaDataverseEntityChatApp
                         {
                             try
                             {
-                                if (milvusCollection == null)
-                                    milvusCollection = milvusClient.GetCollection(MILVUS_COLLECTION);
-
                                 // Process each record in chunkEmbeddings
                                 foreach (var kvp in chunkEmbeddings)
                                 {
@@ -239,7 +235,6 @@ namespace OllamaDataverseEntityChatApp
 
                                     await MilvusManager.InsertEmbeddingsIfNotExistsAsync(
                                         milvusCollection,
-                                        entity, // schema name
                                         recordId,
                                         new Dictionary<int, (List<string>, float[])>
                                         {
